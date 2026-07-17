@@ -30,7 +30,7 @@
   --muted:#8A8477;
 }
 *{box-sizing:border-box;}
-html,body{margin:0;padding:0;}
+html,body{margin:0;padding:0; overflow-x:hidden;}
 body{
   background:var(--bg);
   font-family:'Work Sans',sans-serif;
@@ -112,6 +112,10 @@ body{
   display:grid;
   grid-template-columns:1fr 340px;
   gap:0;
+  min-width:0;
+}
+.content-col{
+  min-width:0;
 }
 @media (max-width:860px){
   .main{grid-template-columns:1fr;}
@@ -710,7 +714,7 @@ function renderMenuView(){
       </div>
     </div>
     <div class="main">
-      <div>
+      <div class="content-col">
         <div class="cat-nav">${catButtons}</div>
         <div class="menu-area">
           <h2 class="menu-section-title">${section.title}</h2>
