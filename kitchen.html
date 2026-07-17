@@ -8,7 +8,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Anton&family=Space+Mono:wght@400;700&family=Work+Sans:wght@400;500;600;700&display=swap');
 :root{
   --ink:#211E1A; --bg:#1B1A17; --cream:#F6F1E7; --paper:#FBF8F2;
-  --brand:#D6401F; --amber:#F0A202; --green:#3A7D5C; --line:#E4DCCB; --muted:#8A8477;
+  --brand:#D6401F; --amber:#F0A202; --green:#3A7D5C; --green-dark:#255C40; --line:#E4DCCB; --muted:#8A8477;
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;}
@@ -87,6 +87,16 @@ body{background:var(--bg); font-family:'Work Sans',sans-serif; color:var(--ink);
 }
 .advance-btn:hover{background:var(--brand);}
 .advance-btn:disabled{background:var(--green); cursor:default; opacity:0.8;}
+.payment-pill{
+  font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; width:fit-content;
+}
+.payment-pill.pendiente{background:#fff3e0; color:#8a5a00; border:1px solid var(--amber);}
+.payment-pill.pagado{background:#e6f4ec; color:var(--green-dark); border:1px solid var(--green);}
+.mark-paid-btn{
+  flex:1; background:var(--green); color:#fff; border:none; padding:11px; border-radius:8px;
+  font-weight:700; font-size:12.5px; cursor:pointer;
+}
+.mark-paid-btn:hover{opacity:0.9;}
 .empty-state{padding:60px 20px; text-align:center; color:var(--muted); font-size:14px;}
 </style>
 </head>
@@ -204,6 +214,7 @@ function renderOrderCard(order){
         </div>
         <span class="order-type-badge">${order.order_type === 'delivery' ? '🛵 Delivery' : '🏬 Retiro'}</span>
       </div>
+      <div style="font-weight:700; font-size:14px;">👤 ${order.customer_name || 'Sin nombre'}</div>
       ${order.order_type === 'delivery' ? `<div class="order-address">📍 ${order.delivery_address || ''}</div>` : ""}
       <div class="order-items">${items}</div>
       <div class="order-footer">
@@ -211,9 +222,15 @@ function renderOrderCard(order){
         <span class="order-payment">${order.payment_method === 'efectivo' ? '💵 Efectivo' : order.payment_method === 'tarjeta' ? '💳 Tarjeta' : '📱 Online'}</span>
       </div>
       <span class="status-pill">${STATUS_LABELS[order.status]}</span>
-      <button class="advance-btn" data-advance="${order.id}" data-next="${nextStatus||''}" ${nextStatus?"":"disabled"}>
-        ${nextStatus ? "Marcar: " + STATUS_LABELS[nextStatus] : "Completado"}
-      </button>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span class="payment-pill ${order.payment_status}">${order.payment_status === 'pagado' ? '✅ Pagado' : '⏳ Pago pendiente'}</span>
+      </div>
+      <div style="display:flex; gap:8px;">
+        ${order.payment_status !== 'pagado' ? `<button class="mark-paid-btn" data-markpaid="${order.id}">Marcar como pagado</button>` : ""}
+        <button class="advance-btn" data-advance="${order.id}" data-next="${nextStatus||''}" ${nextStatus?"":"disabled"}>
+          ${nextStatus ? "Marcar: " + STATUS_LABELS[nextStatus] : "Completado"}
+        </button>
+      </div>
     </div>
   `;
 }
@@ -253,6 +270,24 @@ function attachEvents(){
   document.querySelectorAll("[data-filter]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       state.filter = btn.getAttribute("data-filter");
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-markpaid]").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const orderId = btn.getAttribute("data-markpaid");
+      btn.disabled = true; btn.textContent = "Guardando…";
+      const { error } = await sb.from("orders")
+        .update({ payment_status: "pagado", paid_at: new Date().toISOString() })
+        .eq("id", orderId);
+      if(error){
+        alert("No se pudo marcar como pagado: " + error.message);
+        render();
+        return;
+      }
+      const order = state.orders.find(o=>o.id===orderId);
+      if(order) order.payment_status = "pagado";
       render();
     });
   });

@@ -624,6 +624,7 @@ let state = {
   orderType: "retiro",
   paymentMethod: null,
   deliveryAddress: "",
+  customerName: "",
   orderNumber: null,
   orderId: null,
   statusStep: 0,
@@ -656,6 +657,7 @@ function cartGrandTotal(){
 }
 function canConfirmOrder(){
   if(state.cart.length === 0) return false;
+  if(state.customerName.trim().length === 0) return false;
   if(!state.paymentMethod) return false;
   if(state.orderType === "delivery" && state.deliveryAddress.trim().length === 0) return false;
   return true;
@@ -675,6 +677,13 @@ function renderMenuView(){
   const deliveryFee = cartDeliveryFee();
   const total = cartGrandTotal();
   const confirmEnabled = canConfirmOrder();
+
+  const nameHtml = `
+    <div class="checkout-section" style="border-top:none; padding-top:4px;">
+      <div class="checkout-label">Nombre para tu pedido</div>
+      <input type="text" class="address-input" id="customerNameInput" placeholder="¿A nombre de quién?" value="${state.customerName.replace(/"/g,'&quot;')}" style="margin-top:0;">
+    </div>
+  `;
 
   const orderTypeHtml = `
     <div class="checkout-section">
@@ -728,6 +737,7 @@ function renderMenuView(){
         <h3 class="ticket-title">Tu ticket <span style="font-family:'Space Mono',monospace;font-size:13px;">${cartTotalCount()} u.</span></h3>
         <p class="ticket-sub">Elige retiro en local o delivery</p>
         <div class="ticket-items">${cartHtml}</div>
+        ${nameHtml}
         ${orderTypeHtml}
         ${paymentHtml}
         <div class="ticket-totals">
@@ -892,6 +902,7 @@ function renderPickupView(){
     <div class="pickup-screen">
       <span class="pickup-label">${isDelivery ? "Tu número de pedido" : "Tu número de retiro"}</span>
       <div class="pickup-number">${state.orderNumber}</div>
+      ${state.customerName ? `<p style="font-family:'Space Mono',monospace; font-size:14px; color:var(--muted); margin-top:-8px;">Pedido de: <strong style="color:var(--ink);">${state.customerName}</strong></p>` : ""}
       <div class="status-track">${stepsHtml}</div>
       <p class="pickup-msg">${msg}</p>
       <p class="pickup-sub">${subLine}</p>
@@ -953,6 +964,15 @@ function attachEvents(){
       render();
     });
   });
+
+  const customerNameInput = document.getElementById("customerNameInput");
+  if(customerNameInput){
+    customerNameInput.addEventListener("input", ()=>{
+      state.customerName = customerNameInput.value;
+      const btn = document.getElementById("confirmBtn");
+      if(btn) btn.disabled = !canConfirmOrder();
+    });
+  }
 
   const addressInput = document.getElementById("deliveryAddressInput");
   if(addressInput){
@@ -1054,6 +1074,7 @@ function attachEvents(){
         sb.removeChannel(state.realtimeChannel);
         state.realtimeChannel = null;
       }
+      clearActiveOrder();
       state.view = "menu";
       state.cart = [];
       state.orderNumber = null;
@@ -1062,6 +1083,7 @@ function attachEvents(){
       state.orderType = "retiro";
       state.paymentMethod = null;
       state.deliveryAddress = "";
+      state.customerName = "";
       render();
     });
   }
@@ -1100,6 +1122,7 @@ async function confirmOrder(){
       .from("orders")
       .insert({
         id: newOrderId,
+        customer_name: state.customerName.trim(),
         order_type: state.orderType,
         payment_method: state.paymentMethod,
         delivery_address: state.orderType === "delivery" ? state.deliveryAddress : null,
@@ -1140,6 +1163,7 @@ async function confirmOrder(){
     state.view = "ticket";
     render();
     subscribeToOrder(newOrderId);
+    saveActiveOrder();
 
   } else {
     // MODO DEMO: sin Supabase configurado, se simula el avance de estados.
@@ -1173,12 +1197,85 @@ function subscribeToOrder(orderId){
       (payload) => {
         state.statusStep = statusToStep(payload.new.status, state.orderType);
         render();
+        const flow = STATUS_FLOW_LOOKUP[state.orderType];
+        if(state.statusStep === flow.length - 1){
+          clearActiveOrder();
+        }
       }
     )
     .subscribe();
 }
 
-render();
+const ACTIVE_ORDER_KEY = "puntoburger_active_order";
+
+function saveActiveOrder(){
+  try{
+    localStorage.setItem(ACTIVE_ORDER_KEY, JSON.stringify({
+      id: state.orderId, orderType: state.orderType, orderNumber: state.orderNumber, customerName: state.customerName
+    }));
+  }catch(e){ /* localStorage no disponible (modo privado, etc.) */ }
+  const url = new URL(window.location.href);
+  url.searchParams.set("pedido", state.orderId);
+  window.history.replaceState(null, "", url.toString());
+}
+
+function clearActiveOrder(){
+  try{ localStorage.removeItem(ACTIVE_ORDER_KEY); }catch(e){}
+  const url = new URL(window.location.href);
+  url.searchParams.delete("pedido");
+  window.history.replaceState(null, "", url.toString());
+}
+
+async function restoreActiveOrderIfAny(){
+  if(!supabaseReady) return;
+
+  let orderId = new URL(window.location.href).searchParams.get("pedido");
+  let savedOrderType = null;
+  if(!orderId){
+    try{
+      const raw = localStorage.getItem(ACTIVE_ORDER_KEY);
+      if(raw){
+        const saved = JSON.parse(raw);
+        orderId = saved.id;
+        savedOrderType = saved.orderType;
+      }
+    }catch(e){}
+  }
+  if(!orderId) return;
+
+  const { data, error } = await sb
+    .from("order_tracking")
+    .select("order_number, order_type, status, customer_name")
+    .eq("id", orderId)
+    .single();
+
+  if(error || !data){
+    clearActiveOrder();
+    return;
+  }
+
+  const flow = STATUS_FLOW_LOOKUP[data.order_type];
+  const isTerminal = data.status === flow[flow.length - 1];
+  if(isTerminal){
+    clearActiveOrder();
+    return;
+  }
+
+  state.orderId = orderId;
+  state.orderType = data.order_type;
+  state.orderNumber = "N° " + data.order_number;
+  state.customerName = data.customer_name || "";
+  state.statusStep = statusToStep(data.status, data.order_type);
+  state.view = "ticket";
+  subscribeToOrder(orderId);
+}
+
+const STATUS_FLOW_LOOKUP = { retiro: STATUS_STEPS_RETIRO, delivery: STATUS_STEPS_DELIVERY };
+
+(async function init(){
+  await restoreActiveOrderIfAny();
+  render();
+})();
 
 if("serviceWorker" in navigator){
   window.addEventListener("load", ()=>{
