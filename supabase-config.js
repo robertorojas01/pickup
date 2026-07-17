@@ -13,5 +13,5 @@
 // en tu base de datos de Supabase de verdad.
 // ============================================================
 
-window.SUPABASE_URL = "https://avzdihncxhypaufhszmo.supabase.co/rest/v1/";
+window.SUPABASE_URL = "https://avzdihncxhypaufhszmo.supabase.co";
 window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2emRpaG5jeGh5cGF1Zmhzem1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyOTcxNDcsImV4cCI6MjA5OTg3MzE0N30.dfvbdnHp2l_RMiTcysjo8BGNPG9o08EY8aGqMyVc5Dk";
