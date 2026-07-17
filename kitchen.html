@@ -110,7 +110,7 @@ const STATUS_LABELS = {
   en_camino:"En camino", entregado:"Entregado"
 };
 
-let state = { session: null, loginError: "", orders: [], filter: "activos", channel: null };
+let state = { session: null, loginError: "", orders: [], filter: "activos", channel: null, loadError: "" };
 
 function formatCLP(n){ return "$" + Math.round(n).toLocaleString("es-CL"); }
 function formatTime(iso){
@@ -179,6 +179,7 @@ function renderDashboard(){
       </div>
       <span class="order-count">${visibleOrders.length} pedido(s)</span>
     </div>
+    ${state.loadError ? `<div class="config-warning" style="margin:16px 22px;">No se pudo actualizar la lista: ${state.loadError}</div>` : ""}
     <div class="order-grid">${cardsHtml}</div>
   `;
 }
@@ -282,7 +283,15 @@ async function loadOrders(){
     .from("orders")
     .select("*, order_items(*)")
     .order("created_at", { ascending: false });
-  if(!error) state.orders = data;
+  if(error){
+    state.loadError = error.message;
+    if(error.code === "PGRST301" || /JWT/i.test(error.message)){
+      state.session = null; // el token venció: manda de vuelta al login
+    }
+  } else {
+    state.orders = data;
+    state.loadError = "";
+  }
 }
 
 function subscribeRealtime(){
