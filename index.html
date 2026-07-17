@@ -1083,18 +1083,18 @@ async function confirmOrder(){
     const subtotal = cartSubtotal();
     const deliveryFee = cartDeliveryFee();
     const total = cartGrandTotal();
+    const newOrderId = crypto.randomUUID();
 
-    const { data: orderRow, error: orderError } = await sb
+    const { error: orderError } = await sb
       .from("orders")
       .insert({
+        id: newOrderId,
         order_type: state.orderType,
         payment_method: state.paymentMethod,
         delivery_address: state.orderType === "delivery" ? state.deliveryAddress : null,
         subtotal, delivery_fee: deliveryFee, total,
         status: "recibido"
-      })
-      .select()
-      .single();
+      });
 
     if(orderError){
       alert("No se pudo enviar el pedido. Intenta de nuevo.\n" + orderError.message);
@@ -1103,7 +1103,7 @@ async function confirmOrder(){
     }
 
     const itemsPayload = state.cart.map(line => ({
-      order_id: orderRow.id,
+      order_id: newOrderId,
       item_name: line.name,
       unit_price: line.unitPrice,
       qty: line.qty,
@@ -1114,13 +1114,21 @@ async function confirmOrder(){
       console.error("Error guardando items:", itemsError.message);
     }
 
-    state.orderId = orderRow.id;
-    state.orderNumber = "N° " + orderRow.order_number;
+    // El trigger en la base de datos ya creó la fila de seguimiento público;
+    // la leemos para mostrar el número de pedido real.
+    const { data: trackingRow, error: trackingError } = await sb
+      .from("order_tracking")
+      .select("order_number")
+      .eq("id", newOrderId)
+      .single();
+
+    state.orderId = newOrderId;
+    state.orderNumber = "N° " + (trackingRow ? trackingRow.order_number : "—");
     state.statusStep = 0;
     state.sheetOpen = false;
     state.view = "ticket";
     render();
-    subscribeToOrder(orderRow.id);
+    subscribeToOrder(newOrderId);
 
   } else {
     // MODO DEMO: sin Supabase configurado, se simula el avance de estados.
@@ -1150,7 +1158,7 @@ function subscribeToOrder(orderId){
   state.realtimeChannel = sb
     .channel("order-" + orderId)
     .on("postgres_changes",
-      { event: "UPDATE", schema: "public", table: "orders", filter: "id=eq." + orderId },
+      { event: "UPDATE", schema: "public", table: "order_tracking", filter: "id=eq." + orderId },
       (payload) => {
         state.statusStep = statusToStep(payload.new.status, state.orderType);
         render();
