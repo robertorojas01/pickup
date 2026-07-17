@@ -1,4 +1,4 @@
-const CACHE_NAME = "punto-burger-v2";
+const CACHE_NAME = "punto-burger-v3";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -37,7 +37,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Del propio sitio, solo aplicamos caché a los archivos del app shell.
   const isAppShellFile = APP_SHELL.some((path) => {
     const cleanPath = path.replace("./", "/");
     return url.pathname === cleanPath || url.pathname.endsWith(cleanPath);
@@ -46,6 +45,25 @@ self.addEventListener("fetch", (event) => {
     return; // deja pasar sin cachear (ej: kitchen.html, otras páginas nuevas)
   }
 
+  const isHTML = req.mode === "navigate" || url.pathname.endsWith("index.html") || url.pathname.endsWith("/");
+
+  if (isHTML) {
+    // NETWORK-FIRST para el HTML: así cada actualización se ve al instante,
+    // sin depender de que el usuario borre caché o reinstale la app.
+    event.respondWith(
+      fetch(req)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+          return response;
+        })
+        .catch(() => caches.match(req).then((cached) => cached || caches.match("./index.html")))
+    );
+    return;
+  }
+
+  // CACHE-FIRST para íconos y manifest: casi nunca cambian, y así
+  // funcionan sin conexión.
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;
